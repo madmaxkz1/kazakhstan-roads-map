@@ -21,6 +21,11 @@
     #map {
       width: 100%;
       height: 100%;
+      background: #eef3f8;
+    }
+
+    .leaflet-container {
+      background: #eef3f8;
     }
 
     .panel {
@@ -92,6 +97,8 @@
     const toggleOsmEl = document.getElementById("toggle-osm");
 
     const localRoadsApi = "/api/republic-roads";
+    const kazakhstanBoundaryApi = "/api/kazakhstan-boundary";
+    const localRoadsCache = "./roads_republic_osm_cache.json";
     const overpassEndpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -113,16 +120,19 @@
       out body geom;
     `;
 
-    const map = L.map("map").setView([48.0, 67.0], 5);
+    const kazakhstanBounds = L.latLngBounds(
+      [40.2, 46.0],
+      [55.6, 87.5]
+    );
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      subdomains: "abcd",
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    }).addTo(map);
+    const map = L.map("map", {
+      maxBounds: kazakhstanBounds.pad(0.12),
+      maxBoundsViscosity: 0.8
+    }).setView([48.0, 67.0], 5);
 
     let localRoadsLayer;
     let osmRepublicRoadsLayer;
+    let kazakhstanBoundaryLayer;
     let selectedRoadRef;
     let selectedRoadLayers = [];
 
@@ -133,6 +143,7 @@
     ).addTo(map);
 
     setStatus("Загрузка слоев...");
+    loadKazakhstanBoundary();
     loadLocalRoads();
     loadOsmRepublicRoads();
 
@@ -188,6 +199,16 @@
         errors.push(localRoadsApi + " -> " + err.message);
       }
 
+      try {
+        appendStatus("Пробую локальный кэш: " + localRoadsCache);
+        const overpassJson = await fetchJson(localRoadsCache);
+        renderOsmRepublicRoads(overpassJson, "локальный кэш");
+        return;
+      } catch (err) {
+        console.warn(localRoadsCache, err);
+        errors.push(localRoadsCache + " -> " + err.message);
+      }
+
       for (const endpoint of overpassEndpoints) {
         try {
           appendStatus("Пробую Overpass: " + endpoint);
@@ -207,6 +228,36 @@
         errors.join("\n") +
         "\nОткройте страницу через http://127.0.0.1:8000/index.html, а не file://."
       );
+    }
+
+    async function loadKazakhstanBoundary() {
+      try {
+        appendStatus("Загрузка границы Казахстана...");
+        const overpassJson = await fetchJson(kazakhstanBoundaryApi);
+        const geojson = overpassBoundaryToGeoJson(overpassJson);
+
+        if (!geojson.features.length) {
+          throw new Error("ответ пришел без линии границы");
+        }
+
+        kazakhstanBoundaryLayer = L.geoJSON(geojson, {
+          style: {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 1,
+            fillOpacity: 0
+          },
+          interactive: false
+        }).addTo(map);
+
+        kazakhstanBoundaryLayer.bringToBack();
+        layersControl.addOverlay(kazakhstanBoundaryLayer, "Граница Казахстана");
+        fitToVisibleLayers();
+        appendStatus("Граница Казахстана загружена.");
+      } catch (err) {
+        console.warn(err);
+        appendStatus("Граница Казахстана не загружена: " + err.message + ".");
+      }
     }
 
     function renderOsmRepublicRoads(overpassJson, sourceLabel) {
@@ -300,6 +351,42 @@
               }
             };
           })
+      };
+    }
+
+    function overpassBoundaryToGeoJson(overpassJson) {
+      const elements = overpassJson.elements || [];
+      const relation = elements.find(element => element.type === "relation");
+      const features = [];
+
+      if (!relation || !Array.isArray(relation.members)) {
+        return {
+          type: "FeatureCollection",
+          features
+        };
+      }
+
+      relation.members.forEach(member => {
+        if (member.type !== "way" || !Array.isArray(member.geometry) || member.geometry.length < 2) {
+          return;
+        }
+
+        features.push({
+          type: "Feature",
+          properties: {
+            name: "Республика Казахстан",
+            role: member.role || "outer"
+          },
+          geometry: {
+            type: "LineString",
+            coordinates: member.geometry.map(point => [point.lon, point.lat])
+          }
+        });
+      });
+
+      return {
+        type: "FeatureCollection",
+        features
       };
     }
 
@@ -418,7 +505,7 @@
     function fitToVisibleLayers() {
       const bounds = L.latLngBounds();
 
-      [localRoadsLayer, osmRepublicRoadsLayer].forEach(layer => {
+      [kazakhstanBoundaryLayer, localRoadsLayer, osmRepublicRoadsLayer].forEach(layer => {
         if (layer && map.hasLayer(layer)) {
           bounds.extend(layer.getBounds());
         }

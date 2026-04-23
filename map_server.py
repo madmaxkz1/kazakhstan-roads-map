@@ -9,6 +9,7 @@ import os
 
 ROOT = Path(__file__).resolve().parent
 CACHE_FILE = ROOT / "roads_republic_osm_cache.json"
+BOUNDARY_CACHE_FILE = ROOT / "kazakhstan_boundary_osm_cache.json"
 HOST = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 
@@ -33,11 +34,24 @@ area["ISO3166-1"="KZ"][admin_level=2]->.kz;
 out body geom;
 """
 
+BOUNDARY_QUERY = """
+[out:json][timeout:120];
+area["ISO3166-1"="KZ"][admin_level=2]->.kz;
+relation(area.kz)["type"="boundary"]["boundary"="administrative"]["admin_level"="2"];
+out body geom;
+"""
+
 
 class MapHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if urlparse(self.path).path == "/api/republic-roads":
+        path = urlparse(self.path).path
+
+        if path == "/api/republic-roads":
             self.send_roads()
+            return
+
+        if path == "/api/kazakhstan-boundary":
+            self.send_boundary()
             return
 
         super().do_GET()
@@ -72,6 +86,36 @@ class MapHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
+    def send_boundary(self):
+        if BOUNDARY_CACHE_FILE.exists():
+            data = BOUNDARY_CACHE_FILE.read_text(encoding="utf-8")
+            if has_overpass_elements(data):
+                self.send_json(data)
+                return
+            BOUNDARY_CACHE_FILE.unlink()
+
+        errors = []
+        for endpoint in OVERPASS_ENDPOINTS:
+            try:
+                data = fetch_overpass(endpoint, BOUNDARY_QUERY)
+                BOUNDARY_CACHE_FILE.write_text(data, encoding="utf-8")
+                self.send_json(data)
+                return
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                errors.append(f"{endpoint}: {exc}")
+
+        body = json.dumps(
+            {
+                "error": "Не удалось загрузить границу Казахстана",
+                "details": errors,
+            },
+            ensure_ascii=False,
+        )
+        self.send_response(502)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
     def send_json(self, data):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -80,8 +124,8 @@ class MapHandler(SimpleHTTPRequestHandler):
         self.wfile.write(data.encode("utf-8"))
 
 
-def fetch_overpass(endpoint):
-    url = endpoint + "?data=" + quote(OVERPASS_QUERY)
+def fetch_overpass(endpoint, query=OVERPASS_QUERY):
+    url = endpoint + "?data=" + quote(query)
     request = Request(
         url,
         headers={
