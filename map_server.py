@@ -36,8 +36,7 @@ out body geom;
 
 BOUNDARY_QUERY = """
 [out:json][timeout:120];
-area["ISO3166-1"="KZ"][admin_level=2]->.kz;
-relation(area.kz)["type"="boundary"]["boundary"="administrative"]["admin_level"="2"];
+relation["ISO3166-1"="KZ"]["type"="boundary"]["boundary"="administrative"]["admin_level"="2"];
 out body geom;
 """
 

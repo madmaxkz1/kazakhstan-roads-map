@@ -133,6 +133,7 @@
     let localRoadsLayer;
     let osmRepublicRoadsLayer;
     let kazakhstanBoundaryLayer;
+    let kazakhstanBoundaryRings = [];
     let selectedRoadRef;
     let selectedRoadLayers = [];
 
@@ -143,9 +144,10 @@
     ).addTo(map);
 
     setStatus("Загрузка слоев...");
-    loadKazakhstanBoundary();
-    loadLocalRoads();
-    loadOsmRepublicRoads();
+    loadKazakhstanBoundary().finally(() => {
+      loadLocalRoads();
+      loadOsmRepublicRoads();
+    });
 
     toggleLocalEl.addEventListener("change", () => {
       setLayerVisibility(localRoadsLayer, toggleLocalEl.checked);
@@ -164,7 +166,9 @@
           return res.json();
         })
         .then(geojson => {
-          localRoadsLayer = L.geoJSON(geojson, {
+          const clippedGeojson = clipFeatureCollectionToKazakhstan(geojson);
+
+          localRoadsLayer = L.geoJSON(clippedGeojson, {
             style: {
               color: "#2563eb",
               weight: 3,
@@ -250,6 +254,7 @@
           interactive: false
         }).addTo(map);
 
+        kazakhstanBoundaryRings = buildBoundaryRings(geojson);
         kazakhstanBoundaryLayer.bringToBack();
         layersControl.addOverlay(kazakhstanBoundaryLayer, "Граница Казахстана");
         fitToVisibleLayers();
@@ -262,12 +267,13 @@
 
     function renderOsmRepublicRoads(overpassJson, sourceLabel) {
       const geojson = overpassToGeoJson(overpassJson);
+      const clippedGeojson = clipFeatureCollectionToKazakhstan(geojson);
 
-      if (!geojson.features.length) {
+      if (!clippedGeojson.features.length) {
         throw new Error("ответ пришел без дорожных сегментов");
       }
 
-      osmRepublicRoadsLayer = L.geoJSON(geojson, {
+      osmRepublicRoadsLayer = L.geoJSON(clippedGeojson, {
         style: {
           color: "#dc2626",
           weight: 3,
@@ -279,7 +285,7 @@
       layersControl.addOverlay(osmRepublicRoadsLayer, "OSM KZ:national + KZ:regional");
       setLayerVisibility(osmRepublicRoadsLayer, toggleOsmEl.checked);
       fitToVisibleLayers();
-      appendStatus("OSM слой загружен через " + sourceLabel + ": " + geojson.features.length + " сегментов.");
+      appendStatus("OSM слой загружен через " + sourceLabel + ": " + clippedGeojson.features.length + " сегментов.");
     }
 
     async function fetchJson(url) {
@@ -388,6 +394,134 @@
         type: "FeatureCollection",
         features
       };
+    }
+
+    function clipFeatureCollectionToKazakhstan(featureCollection) {
+      if (!kazakhstanBoundaryRings.length) {
+        return featureCollection;
+      }
+
+      return {
+        type: "FeatureCollection",
+        features: (featureCollection.features || []).flatMap(clipRoadFeatureToKazakhstan)
+      };
+    }
+
+    function clipRoadFeatureToKazakhstan(feature) {
+      if (!feature.geometry || feature.geometry.type !== "LineString") {
+        return [];
+      }
+
+      const clippedParts = splitLineInsideKazakhstan(feature.geometry.coordinates);
+
+      return clippedParts.map(coordinates => ({
+        type: "Feature",
+        properties: feature.properties || {},
+        geometry: {
+          type: "LineString",
+          coordinates
+        }
+      }));
+    }
+
+    function splitLineInsideKazakhstan(coordinates) {
+      const parts = [];
+      let currentPart = [];
+
+      coordinates.forEach(coordinate => {
+        if (isPointInsideKazakhstan(coordinate)) {
+          currentPart.push(coordinate);
+          return;
+        }
+
+        if (currentPart.length > 1) {
+          parts.push(currentPart);
+        }
+        currentPart = [];
+      });
+
+      if (currentPart.length > 1) {
+        parts.push(currentPart);
+      }
+
+      return parts;
+    }
+
+    function isPointInsideKazakhstan(coordinate) {
+      return kazakhstanBoundaryRings.some(ring => pointInRing(coordinate, ring));
+    }
+
+    function pointInRing(point, ring) {
+      const x = point[0];
+      const y = point[1];
+      let inside = false;
+
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0];
+        const yi = ring[i][1];
+        const xj = ring[j][0];
+        const yj = ring[j][1];
+        const intersects = ((yi > y) !== (yj > y)) &&
+          (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+
+        if (intersects) {
+          inside = !inside;
+        }
+      }
+
+      return inside;
+    }
+
+    function buildBoundaryRings(boundaryGeoJson) {
+      const segments = (boundaryGeoJson.features || [])
+        .map(feature => feature.geometry && feature.geometry.coordinates)
+        .filter(coordinates => Array.isArray(coordinates) && coordinates.length > 1)
+        .map(coordinates => coordinates.slice());
+
+      const rings = [];
+
+      while (segments.length) {
+        let ring = segments.shift();
+        let changed = true;
+
+        while (changed) {
+          changed = false;
+
+          for (let index = 0; index < segments.length; index++) {
+            const segment = segments[index];
+            const ringStart = pointKey(ring[0]);
+            const ringEnd = pointKey(ring[ring.length - 1]);
+            const segmentStart = pointKey(segment[0]);
+            const segmentEnd = pointKey(segment[segment.length - 1]);
+
+            if (ringEnd === segmentStart) {
+              ring = ring.concat(segment.slice(1));
+            } else if (ringEnd === segmentEnd) {
+              ring = ring.concat(segment.slice(0, -1).reverse());
+            } else if (ringStart === segmentEnd) {
+              ring = segment.slice(0, -1).concat(ring);
+            } else if (ringStart === segmentStart) {
+              ring = segment.slice(1).reverse().concat(ring);
+            } else {
+              continue;
+            }
+
+            segments.splice(index, 1);
+            changed = true;
+            break;
+          }
+        }
+
+        if (ring.length > 3) {
+          rings.push(ring);
+        }
+      }
+
+      return rings.sort((first, second) => second.length - first.length).slice(0, 3);
+    }
+
+    function pointKey(point) {
+      return point[0].toFixed(5) + "," + point[1].toFixed(5);
     }
 
     function bindRoadPopup(feature, layer) {
