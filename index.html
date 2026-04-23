@@ -66,6 +66,27 @@
       align-items: start;
     }
 
+    .road-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .road-actions button {
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      border-radius: 6px;
+      padding: 7px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .road-actions button:hover {
+      background: #e0f2fe;
+      border-color: #38bdf8;
+    }
+
     .status {
       margin-top: 10px;
       white-space: pre-line;
@@ -79,6 +100,11 @@
     <h3>Республиканские трассы Казахстана</h3>
     <p>Отображаются только трассы республиканского значения Республики Казахстан.</p>
 
+    <div class="road-actions">
+      <button id="select-all-roads" type="button">Выделить все</button>
+      <button id="clear-all-roads" type="button">Снять все</button>
+    </div>
+
     <div id="road-list" class="layers"></div>
 
     <div id="status" class="status">Загрузка...</div>
@@ -89,6 +115,8 @@
   <script>
     const statusEl = document.getElementById("status");
     const roadListEl = document.getElementById("road-list");
+    const selectAllRoadsEl = document.getElementById("select-all-roads");
+    const clearAllRoadsEl = document.getElementById("clear-all-roads");
 
     const kazakhstanBoundaryApi = "/api/kazakhstan-boundary";
 
@@ -133,6 +161,14 @@
       createManualRepublicRoadLayers();
     });
 
+    selectAllRoadsEl.addEventListener("click", () => {
+      setAllRoadsVisibility(true);
+    });
+
+    clearAllRoadsEl.addEventListener("click", () => {
+      setAllRoadsVisibility(false);
+    });
+
     function createManualRepublicRoadLayers() {
       const routes = window.REPUBLIC_ROADS || [];
       roadListEl.innerHTML = "";
@@ -150,6 +186,9 @@
             properties: {
               ref: route.ref,
               name: route.name || "Республиканская трасса " + route.ref,
+              intRefs: route.intRefs || [],
+              lengthKm: route.lengthKm || "",
+              isSchematic: Boolean(route.isSchematic),
               source: "Статический слой"
             },
             geometry: {
@@ -190,6 +229,19 @@
       });
 
       appendStatus("Республиканские трассы готовы: " + routes.length + ". Выберите трассу галочкой.");
+    }
+
+    function setAllRoadsVisibility(shouldShow) {
+      roadListEl.querySelectorAll("input[type='checkbox']").forEach(checkbox => {
+        checkbox.checked = shouldShow;
+      });
+
+      republicRoadLayers.forEach(layer => {
+        setLayerVisibility(layer, shouldShow);
+      });
+
+      resetSelectedRoads();
+      fitToVisibleLayers();
     }
 
     async function loadKazakhstanBoundary() {
@@ -452,10 +504,19 @@
       const ref = props.ref || props.REF || "Без индекса";
       const name = props.name || props.NAME || "Без названия";
       const network = props.network ? "<br>Сеть: " + escapeHtml(props.network) : "";
+      const intRefs = Array.isArray(props.intRefs) && props.intRefs.length
+        ? "<br>Международные индексы: " + escapeHtml(props.intRefs.join(", "))
+        : "";
+      const length = props.lengthKm
+        ? "<br>Длина: " + escapeHtml(props.lengthKm) + " км"
+        : "";
+      const schematic = props.isSchematic
+        ? "<br>Геометрия: схематичная"
+        : "";
       const source = props.source ? "<br>Источник: " + escapeHtml(props.source) : "";
 
       layer.bindPopup(
-        "<b>" + escapeHtml(ref) + "</b><br>" + escapeHtml(name) + network + source
+        "<b>" + escapeHtml(ref) + "</b><br>" + escapeHtml(name) + intRefs + length + network + schematic + source
       );
 
       layer.on("click", () => {
