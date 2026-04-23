@@ -157,6 +157,12 @@
       maxBoundsViscosity: 0.8
     }).setView([48.0, 67.0], 5);
 
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    }).addTo(map);
+
     const republicRoadLayers = new Map();
     let borderCrossingsLayer;
     let kazakhstanBoundaryLayer;
@@ -221,8 +227,7 @@
               name: route.name || "Республиканская трасса " + route.ref,
               intRefs: route.intRefs || [],
               lengthKm: route.lengthKm || "",
-              isSchematic: Boolean(route.isSchematic),
-              source: route.source || "Статический слой"
+              isSchematic: Boolean(route.isSchematic)
             },
             geometry: {
               type: "LineString",
@@ -589,10 +594,9 @@
       const schematic = props.isSchematic
         ? "<br>Геометрия: схематичная"
         : "";
-      const source = props.source ? "<br>Источник: " + escapeHtml(props.source) : "";
 
       layer.bindPopup(
-        "<b>" + escapeHtml(ref) + "</b><br>" + escapeHtml(name) + intRefs + length + network + schematic + source
+        "<b>" + escapeHtml(ref) + "</b><br>" + escapeHtml(name) + intRefs + length + network + schematic
       );
 
       layer.on("click", () => {
