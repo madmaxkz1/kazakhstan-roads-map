@@ -25,7 +25,6 @@ area["ISO3166-1"="KZ"][admin_level=2]->.kz;
 (
   way(area.kz)["highway"]["ref"~"(^|;|[[:space:]])K[AА]Z[ -]?[0-9]", i];
   relation(area.kz)["type"="route"]["route"="road"]["ref"~"^K[AА]Z[ -]?[0-9]", i];
-  relation(area.kz)["type"="route"]["route"="road"]["name"~"(Астана.*Алматы|Алматы.*Астана)", i];
 )->.republicRoutes;
 way(r.republicRoutes)(area.kz)->.republicRouteWays;
 (
