@@ -8,7 +8,7 @@ import os
 
 
 ROOT = Path(__file__).resolve().parent
-CACHE_FILE = ROOT / "roads_republic_osm_cache.json"
+CACHE_FILE = ROOT / "roads_republic_osm_cache_v3.json"
 BOUNDARY_CACHE_FILE = ROOT / "kazakhstan_boundary_osm_cache.json"
 HOST = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
@@ -23,14 +23,16 @@ OVERPASS_QUERY = """
 [out:json][timeout:180];
 area["ISO3166-1"="KZ"][admin_level=2]->.kz;
 (
-  way(area.kz)["highway"]["ref"~"(^|;|[[:space:]])(K[AА]Z|KZ|M|A|P)[ -]?[0-9]", i];
-  way(area.kz)["highway"]["int_ref"~"(^|;|[[:space:]])(AH7|E125|E016|E123)", i];
-  way(area.kz)["highway"]["name"~"(Астана.*Алматы|Алматы.*Астана|Астана.*Караганда|Караганда.*Балхаш|Балхаш.*Алматы)", i];
-  relation(area.kz)["type"="route"]["route"="road"]["ref"~"^(K[AА]Z|KZ|M|A|P)[ -]?[0-9]", i];
-  relation(area.kz)["type"="route"]["route"="road"]["int_ref"~"(^|;|[[:space:]])(AH7|E125|E016|E123)", i];
-  relation(area.kz)["type"="route"]["route"="road"]["name"~"(Астана.*Алматы|Алматы.*Астана|Астана.*Караганда|Караганда.*Балхаш|Балхаш.*Алматы)", i];
-)->.roads;
-(.roads; way(r.roads););
+  way(area.kz)["highway"]["ref"~"(^|;|[[:space:]])K[AА]Z[ -]?[0-9]", i];
+  relation(area.kz)["type"="route"]["route"="road"]["ref"~"^K[AА]Z[ -]?[0-9]", i];
+  relation(area.kz)["type"="route"]["route"="road"]["name"~"(Астана.*Алматы|Алматы.*Астана)", i];
+)->.republicRoutes;
+way(r.republicRoutes)(area.kz)->.republicRouteWays;
+(
+  way.republicRoutes;
+  .republicRouteWays;
+)->.roadsInKazakhstan;
+(.roadsInKazakhstan;);
 out body geom;
 """
 
