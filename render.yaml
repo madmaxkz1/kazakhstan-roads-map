@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: kazakhstan-republic-roads-map
+    runtime: python
+    buildCommand: ""
+    startCommand: "python map_server.py"
+    plan: free

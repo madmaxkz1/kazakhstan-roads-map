@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Республиканские трассы Казахстана</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 1000;
+      width: min(360px, calc(100vw - 48px));
+      background: rgba(255,255,255,0.96);
+      border-radius: 8px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+      padding: 12px;
+    }
+
+    .panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+    }
+
+    .panel p, .panel div, .panel label {
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .layers {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .layers label {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 6px;
+      align-items: start;
+    }
+
+    .status {
+      margin-top: 10px;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel">
+    <h3>Республиканские трассы Казахстана</h3>
+    <p>Слой 1: локальный GeoJSON. Слой 2: облачная база OpenStreetMap через Overpass API.</p>
+
+    <div class="layers">
+      <label>
+        <input id="toggle-local" type="checkbox" checked />
+        <span>Локальный файл roads_republic.geojson</span>
+      </label>
+      <label>
+        <input id="toggle-osm" type="checkbox" checked />
+        <span>OSM: KZ:national + KZ:regional</span>
+      </label>
+    </div>
+
+    <div id="status" class="status">Загрузка...</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const statusEl = document.getElementById("status");
+    const toggleLocalEl = document.getElementById("toggle-local");
+    const toggleOsmEl = document.getElementById("toggle-osm");
+
+    const localRoadsApi = "/api/republic-roads";
+    const overpassEndpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.osm.ch/api/interpreter"
+    ];
+
+    const kzRepublicRoadsQuery = `
+      [out:json][timeout:180];
+      area["ISO3166-1"="KZ"][admin_level=2]->.kz;
+      (
+        way(area.kz)["highway"]["ref"~"(^|;|[[:space:]])(K[AА]Z|KZ|M|A|P)[ -]?[0-9]", i];
+        way(area.kz)["highway"]["int_ref"~"(^|;|[[:space:]])(AH7|E125|E016|E123)", i];
+        way(area.kz)["highway"]["name"~"(Астана.*Алматы|Алматы.*Астана|Астана.*Караганда|Караганда.*Балхаш|Балхаш.*Алматы)", i];
+        relation(area.kz)["type"="route"]["route"="road"]["ref"~"^(K[AА]Z|KZ|M|A|P)[ -]?[0-9]", i];
+        relation(area.kz)["type"="route"]["route"="road"]["int_ref"~"(^|;|[[:space:]])(AH7|E125|E016|E123)", i];
+        relation(area.kz)["type"="route"]["route"="road"]["name"~"(Астана.*Алматы|Алматы.*Астана|Астана.*Караганда|Караганда.*Балхаш|Балхаш.*Алматы)", i];
+      )->.roads;
+      (.roads; way(r.roads););
+      out body geom;
+    `;
+
+    const map = L.map("map").setView([48.0, 67.0], 5);
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    }).addTo(map);
+
+    let localRoadsLayer;
+    let osmRepublicRoadsLayer;
+    let selectedRoadRef;
+    let selectedRoadLayers = [];
+
+    const layersControl = L.control.layers(
+      {},
+      {},
+      { collapsed: false, position: "bottomleft" }
+    ).addTo(map);
+
+    setStatus("Загрузка слоев...");
+    loadLocalRoads();
+    loadOsmRepublicRoads();
+
+    toggleLocalEl.addEventListener("change", () => {
+      setLayerVisibility(localRoadsLayer, toggleLocalEl.checked);
+    });
+
+    toggleOsmEl.addEventListener("change", () => {
+      setLayerVisibility(osmRepublicRoadsLayer, toggleOsmEl.checked);
+    });
+
+    function loadLocalRoads() {
+      fetch("./roads_republic.geojson")
+        .then(res => {
+          if (!res.ok) {
+            throw new Error("локальный roads_republic.geojson не найден");
+          }
+          return res.json();
+        })
+        .then(geojson => {
+          localRoadsLayer = L.geoJSON(geojson, {
+            style: {
+              color: "#2563eb",
+              weight: 3,
+              opacity: 0.85
+            },
+            onEachFeature: bindRoadPopup
+          });
+
+          layersControl.addOverlay(localRoadsLayer, "Локальный GeoJSON");
+          setLayerVisibility(localRoadsLayer, toggleLocalEl.checked);
+          fitToVisibleLayers();
+          appendStatus("Локальный слой загружен.");
+        })
+        .catch(err => {
+          console.warn(err);
+          toggleLocalEl.checked = false;
+          toggleLocalEl.disabled = true;
+          appendStatus("Локальный слой пропущен: " + err.message + ".");
+        });
+    }
+
+    async function loadOsmRepublicRoads() {
+      const errors = [];
+
+      try {
+        appendStatus("Пробую локальный API: " + localRoadsApi);
+        const overpassJson = await fetchJson(localRoadsApi);
+        renderOsmRepublicRoads(overpassJson, "локальный API");
+        return;
+      } catch (err) {
+        console.warn(localRoadsApi, err);
+        errors.push(localRoadsApi + " -> " + err.message);
+      }
+
+      for (const endpoint of overpassEndpoints) {
+        try {
+          appendStatus("Пробую Overpass: " + endpoint);
+          const overpassJson = await fetchOverpass(endpoint, kzRepublicRoadsQuery);
+          renderOsmRepublicRoads(overpassJson, endpoint);
+          return;
+        } catch (err) {
+          console.warn(endpoint, err);
+          errors.push(endpoint + " -> " + err.message);
+        }
+      }
+
+      toggleOsmEl.checked = false;
+      toggleOsmEl.disabled = true;
+      appendStatus(
+        "Ошибка OSM слоя. Все Overpass-серверы отказали.\n" +
+        errors.join("\n") +
+        "\nОткройте страницу через http://127.0.0.1:8000/index.html, а не file://."
+      );
+    }
+
+    function renderOsmRepublicRoads(overpassJson, sourceLabel) {
+      const geojson = overpassToGeoJson(overpassJson);
+
+      if (!geojson.features.length) {
+        throw new Error("ответ пришел без дорожных сегментов");
+      }
+
+      osmRepublicRoadsLayer = L.geoJSON(geojson, {
+        style: {
+          color: "#dc2626",
+          weight: 3,
+          opacity: 0.8
+        },
+        onEachFeature: bindRoadPopup
+      });
+
+      layersControl.addOverlay(osmRepublicRoadsLayer, "OSM KZ:national + KZ:regional");
+      setLayerVisibility(osmRepublicRoadsLayer, toggleOsmEl.checked);
+      fitToVisibleLayers();
+      appendStatus("OSM слой загружен через " + sourceLabel + ": " + geojson.features.length + " сегментов.");
+    }
+
+    async function fetchJson(url) {
+      const res = await fetch(url, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!res.ok) {
+        const details = await res.text().catch(() => "");
+        throw new Error("статус " + res.status + " " + details.slice(0, 120));
+      }
+
+      return res.json();
+    }
+
+    async function fetchOverpass(endpoint, query) {
+      const url = endpoint + "?data=" + encodeURIComponent(query);
+      const res = await fetch(url, {
+        method: "GET",
+        mode: "cors",
+        cache: "no-store"
+      });
+
+      if (!res.ok) {
+        const details = await res.text().catch(() => "");
+        throw new Error("статус " + res.status + " " + details.slice(0, 120));
+      }
+
+      return res.json();
+    }
+
+    function overpassToGeoJson(overpassJson) {
+      const elements = overpassJson.elements || [];
+      const relations = elements.filter(element => element.type === "relation");
+      const ways = elements.filter(element => element.type === "way");
+      const routeTagsByWayId = new Map();
+
+      relations.forEach(relation => {
+        const tags = relation.tags || {};
+        (relation.members || []).forEach(member => {
+          if (member.type === "way" && !routeTagsByWayId.has(member.ref)) {
+            routeTagsByWayId.set(member.ref, tags);
+          }
+        });
+      });
+
+      return {
+        type: "FeatureCollection",
+        features: ways
+          .filter(way => Array.isArray(way.geometry) && way.geometry.length > 1)
+          .map(way => {
+            const routeTags = routeTagsByWayId.get(way.id) || {};
+            const wayTags = way.tags || {};
+
+            return {
+              type: "Feature",
+              properties: {
+                id: way.id,
+                source: "OpenStreetMap Overpass API",
+                ref: routeTags.ref || wayTags.ref || wayTags.int_ref || routeTags.int_ref || "Без индекса",
+                name: inferRoadName(routeTags, wayTags),
+                network: routeTags.network || wayTags.network || "KZ:national/KZ:regional",
+                operator: routeTags.operator || wayTags.operator || ""
+              },
+              geometry: {
+                type: "LineString",
+                coordinates: way.geometry.map(point => [point.lon, point.lat])
+              }
+            };
+          })
+      };
+    }
+
+    function bindRoadPopup(feature, layer) {
+      const props = feature.properties || {};
+      const ref = props.ref || props.REF || "Без индекса";
+      const name = props.name || props.NAME || "Без названия";
+      const network = props.network ? "<br>Сеть: " + escapeHtml(props.network) : "";
+      const source = props.source ? "<br>Источник: " + escapeHtml(props.source) : "";
+
+      layer.bindPopup(
+        "<b>" + escapeHtml(ref) + "</b><br>" + escapeHtml(name) + network + source
+      );
+
+      layer.on("click", () => {
+        selectRoad(feature, layer);
+      });
+    }
+
+    function selectRoad(feature, layer) {
+      resetSelectedRoads();
+
+      const props = feature.properties || {};
+      selectedRoadRef = normalizeRoadRef(props.ref || props.REF);
+      selectedRoadLayers = findRoadLayersByRef(selectedRoadRef, layer);
+
+      selectedRoadLayers.forEach(roadLayer => {
+        roadLayer.setStyle({
+          color: "#f59e0b",
+          weight: 6,
+          opacity: 1
+        });
+
+        if (roadLayer.bringToFront) {
+          roadLayer.bringToFront();
+        }
+      });
+    }
+
+    function findRoadLayersByRef(ref, fallbackLayer) {
+      const matchingLayers = [];
+
+      [localRoadsLayer, osmRepublicRoadsLayer].forEach(groupLayer => {
+        if (!groupLayer) {
+          return;
+        }
+
+        groupLayer.eachLayer(roadLayer => {
+          const roadProps = roadLayer.feature && roadLayer.feature.properties || {};
+          const roadRef = normalizeRoadRef(roadProps.ref || roadProps.REF);
+
+          if (ref && roadRef === ref) {
+            matchingLayers.push(roadLayer);
+          }
+        });
+      });
+
+      return matchingLayers.length ? matchingLayers : [fallbackLayer];
+    }
+
+    function resetSelectedRoads() {
+      selectedRoadLayers.forEach(resetRoadStyle);
+      selectedRoadLayers = [];
+      selectedRoadRef = "";
+    }
+
+    function resetRoadStyle(layer) {
+      if (localRoadsLayer && localRoadsLayer.hasLayer(layer)) {
+        localRoadsLayer.resetStyle(layer);
+        return;
+      }
+
+      if (osmRepublicRoadsLayer && osmRepublicRoadsLayer.hasLayer(layer)) {
+        osmRepublicRoadsLayer.resetStyle(layer);
+      }
+    }
+
+    function normalizeRoadRef(ref) {
+      const normalized = String(ref || "")
+        .toUpperCase()
+        .replaceAll("А", "A")
+        .replace(/\s+/g, "")
+        .replace(/;/g, ",")
+        .split(",")[0]
+        .trim();
+
+      if (["KAZ01", "M-36", "M36", "E125", "AH7"].includes(normalized)) {
+        return "KAZ01";
+      }
+
+      return normalized;
+    }
+
+    function inferRoadName(routeTags, wayTags) {
+      const ref = String(routeTags.ref || wayTags.ref || wayTags.int_ref || routeTags.int_ref || "").toUpperCase().replaceAll("А", "A");
+
+      if (ref.includes("KAZ01") || ref.includes("M-36") || ref.includes("M36") || ref.includes("E125") || ref.includes("AH7")) {
+        return routeTags.name || wayTags.name || "Астана - Караганда - Балхаш - Алматы";
+      }
+
+      return routeTags.name || wayTags.name || "Без названия";
+    }
+
+    function setLayerVisibility(layer, shouldShow) {
+      if (!layer) {
+        return;
+      }
+
+      if (shouldShow) {
+        layer.addTo(map);
+      } else {
+        map.removeLayer(layer);
+      }
+    }
+
+    function fitToVisibleLayers() {
+      const bounds = L.latLngBounds();
+
+      [localRoadsLayer, osmRepublicRoadsLayer].forEach(layer => {
+        if (layer && map.hasLayer(layer)) {
+          bounds.extend(layer.getBounds());
+        }
+      });
+
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [20, 20] });
+      }
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function appendStatus(text) {
+      statusEl.textContent = statusEl.textContent + "\n" + text;
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>
