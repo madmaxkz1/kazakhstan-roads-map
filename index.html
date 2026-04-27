@@ -156,27 +156,29 @@
       <h3>Республиканские трассы Казахстана</h3>
       <button id="toggle-history" class="history-toggle" type="button">Скрыть историю</button>
     </div>
-    <p>Отображаются только трассы республиканского значения Республики Казахстан.</p>
+    <div id="legend-body">
+      <p>Отображаются только трассы республиканского значения Республики Казахстан.</p>
 
-    <div class="road-actions">
-      <button id="select-all-roads" type="button">Выделить все</button>
-      <button id="clear-all-roads" type="button">Снять все</button>
+      <div class="road-actions">
+        <button id="select-all-roads" type="button">Выделить все</button>
+        <button id="clear-all-roads" type="button">Снять все</button>
+      </div>
+
+      <div class="layers">
+        <label>
+          <input id="toggle-crossings" type="checkbox" checked />
+          <span>Пункты пропуска на границе</span>
+        </label>
+        <label>
+          <input id="toggle-cities" type="checkbox" checked />
+          <span>Города Казахстана</span>
+        </label>
+      </div>
+
+      <div id="road-list" class="layers"></div>
+
+      <div id="status" class="status">Загрузка...</div>
     </div>
-
-    <div class="layers">
-      <label>
-        <input id="toggle-crossings" type="checkbox" checked />
-        <span>Пункты пропуска на границе</span>
-      </label>
-      <label>
-        <input id="toggle-cities" type="checkbox" checked />
-        <span>Города Казахстана</span>
-      </label>
-    </div>
-
-    <div id="road-list" class="layers"></div>
-
-    <div id="status" class="status">Загрузка...</div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -184,6 +186,7 @@
   <script src="./border_crossings.js"></script>
   <script src="./cities_kazakhstan.js"></script>
   <script>
+    const legendBodyEl = document.getElementById("legend-body");
     const statusEl = document.getElementById("status");
     const toggleHistoryEl = document.getElementById("toggle-history");
     const roadListEl = document.getElementById("road-list");
@@ -254,8 +257,8 @@
     });
 
     toggleHistoryEl.addEventListener("click", () => {
-      const isHidden = statusEl.hidden;
-      statusEl.hidden = !isHidden;
+      const isHidden = legendBodyEl.hidden;
+      legendBodyEl.hidden = !isHidden;
       toggleHistoryEl.textContent = isHidden ? "Скрыть историю" : "Показать историю";
     });
 
