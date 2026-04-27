@@ -47,6 +47,18 @@
       font-size: 16px;
     }
 
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .panel-header h3 {
+      margin: 0;
+    }
+
     .panel p, .panel div, .panel label {
       font-size: 13px;
       line-height: 1.35;
@@ -95,6 +107,21 @@
       border-color: #38bdf8;
     }
 
+    .history-toggle {
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .history-toggle:hover {
+      background: #e0f2fe;
+      border-color: #38bdf8;
+    }
+
     .marker-dot {
       display: block;
       width: 14px;
@@ -103,6 +130,16 @@
       border-radius: 50%;
       background: #111827;
       box-shadow: 0 1px 5px rgba(0,0,0,0.35);
+    }
+
+    .city-dot {
+      display: block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      background: #2563eb;
+      box-shadow: 0 1px 4px rgba(37,99,235,0.45);
     }
 
     .status {
@@ -115,7 +152,10 @@
   <div id="map"></div>
 
   <div class="panel">
-    <h3>Республиканские трассы Казахстана</h3>
+    <div class="panel-header">
+      <h3>Республиканские трассы Казахстана</h3>
+      <button id="toggle-history" class="history-toggle" type="button">Скрыть историю</button>
+    </div>
     <p>Отображаются только трассы республиканского значения Республики Казахстан.</p>
 
     <div class="road-actions">
@@ -128,6 +168,10 @@
         <input id="toggle-crossings" type="checkbox" checked />
         <span>Пункты пропуска на границе</span>
       </label>
+      <label>
+        <input id="toggle-cities" type="checkbox" checked />
+        <span>Города Казахстана</span>
+      </label>
     </div>
 
     <div id="road-list" class="layers"></div>
@@ -138,12 +182,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="./republic_roads_manual.js"></script>
   <script src="./border_crossings.js"></script>
+  <script src="./cities_kazakhstan.js"></script>
   <script>
     const statusEl = document.getElementById("status");
+    const toggleHistoryEl = document.getElementById("toggle-history");
     const roadListEl = document.getElementById("road-list");
     const selectAllRoadsEl = document.getElementById("select-all-roads");
     const clearAllRoadsEl = document.getElementById("clear-all-roads");
     const toggleCrossingsEl = document.getElementById("toggle-crossings");
+    const toggleCitiesEl = document.getElementById("toggle-cities");
 
     const kazakhstanBoundaryApi = "/api/kazakhstan-boundary";
 
@@ -165,6 +212,7 @@
 
     const republicRoadLayers = new Map();
     let borderCrossingsLayer;
+    let citiesLayer;
     let kazakhstanBoundaryLayer;
     let kazakhstanFillLayer;
     let kazakhstanBoundaryRings = [];
@@ -194,6 +242,7 @@
 
       createManualRepublicRoadLayers();
       createBorderCrossingsLayer();
+      createCitiesLayer();
     });
 
     selectAllRoadsEl.addEventListener("click", () => {
@@ -204,8 +253,18 @@
       setAllRoadsVisibility(false);
     });
 
+    toggleHistoryEl.addEventListener("click", () => {
+      const isHidden = statusEl.hidden;
+      statusEl.hidden = !isHidden;
+      toggleHistoryEl.textContent = isHidden ? "Скрыть историю" : "Показать историю";
+    });
+
     toggleCrossingsEl.addEventListener("change", () => {
       setLayerVisibility(borderCrossingsLayer, toggleCrossingsEl.checked);
+    });
+
+    toggleCitiesEl.addEventListener("change", () => {
+      setLayerVisibility(citiesLayer, toggleCitiesEl.checked);
     });
 
     function createManualRepublicRoadLayers() {
@@ -306,6 +365,34 @@
       layersControl.addOverlay(borderCrossingsLayer, "Пункты пропуска");
       setLayerVisibility(borderCrossingsLayer, toggleCrossingsEl.checked);
       appendStatus("Пункты пропуска загружены: " + crossings.length + ".");
+    }
+
+    function createCitiesLayer() {
+      const cities = window.KAZAKHSTAN_CITIES || [];
+
+      const cityIcon = L.divIcon({
+        className: "",
+        html: "<span class=\"city-dot\"></span>",
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+        popupAnchor: [0, -7]
+      });
+
+      citiesLayer = L.layerGroup(
+        cities.map(city => {
+          const marker = L.marker([city.coordinates[1], city.coordinates[0]], {
+            icon: cityIcon,
+            title: city.name
+          });
+
+          marker.bindPopup("<b>" + escapeHtml(city.name) + "</b>");
+          return marker;
+        })
+      );
+
+      layersControl.addOverlay(citiesLayer, "Города Казахстана");
+      setLayerVisibility(citiesLayer, toggleCitiesEl.checked);
+      appendStatus("Города загружены: " + cities.length + ".");
     }
 
     function setAllRoadsVisibility(shouldShow) {
@@ -703,7 +790,7 @@
 
       const roadLayers = Array.from(republicRoadLayers.values());
 
-      [kazakhstanFillLayer, kazakhstanBoundaryLayer, ...roadLayers, borderCrossingsLayer].forEach(layer => {
+      [kazakhstanFillLayer, kazakhstanBoundaryLayer, ...roadLayers, borderCrossingsLayer, citiesLayer].forEach(layer => {
         if (layer && map.hasLayer(layer)) {
           bounds.extend(layer.getBounds());
         }

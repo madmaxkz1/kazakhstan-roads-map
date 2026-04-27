@@ -1,0 +1,22 @@
+window.KAZAKHSTAN_CITIES = [
+  { name: "Астана", coordinates: [71.4306, 51.1282] },
+  { name: "Алматы", coordinates: [76.8897, 43.2389] },
+  { name: "Шымкент", coordinates: [69.5901, 42.3417] },
+  { name: "Караганда", coordinates: [73.1021, 49.8047] },
+  { name: "Актобе", coordinates: [57.1667, 50.2839] },
+  { name: "Атырау", coordinates: [51.9238, 47.0945] },
+  { name: "Актау", coordinates: [51.1975, 43.6350] },
+  { name: "Уральск", coordinates: [51.3667, 51.2333] },
+  { name: "Костанай", coordinates: [63.6246, 53.2198] },
+  { name: "Петропавловск", coordinates: [69.1628, 54.8728] },
+  { name: "Кокшетау", coordinates: [69.3800, 53.2833] },
+  { name: "Павлодар", coordinates: [76.9500, 52.2873] },
+  { name: "Семей", coordinates: [80.2275, 50.4111] },
+  { name: "Усть-Каменогорск", coordinates: [82.6059, 49.9483] },
+  { name: "Кызылорда", coordinates: [65.5092, 44.8528] },
+  { name: "Тараз", coordinates: [71.3667, 42.9000] },
+  { name: "Талдыкорган", coordinates: [78.3770, 44.8479] },
+  { name: "Туркестан", coordinates: [68.2514, 43.3014] },
+  { name: "Жезказган", coordinates: [67.7070, 47.8040] },
+  { name: "Балхаш", coordinates: [74.9804, 46.8481] }
+];
